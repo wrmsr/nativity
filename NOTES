@@ -4,4 +4,4 @@ plan of attack:
  - profit
 
 http://yarchive.net/comp/linux/ptrace_self_attach.html
-
+https://github.com/xenserver/xen-4.6/blob/master/xen/arch/x86/x86_emulate/x86_emulate.c#L1959
