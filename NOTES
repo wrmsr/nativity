@@ -1,0 +1,4 @@
+plan of attack:
+ - patch libc syscall instrs to int80 equivs
+ - soviet iret
+ - profit
