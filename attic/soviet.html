@@ -1,0 +1,542 @@
+
+
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+
+
+<link type="text/css" rel="stylesheet" href="/static/css/banner-styles.css"/>
+
+
+<title>Entering the kernel without a driver and getting interrupt information from APIC - The Code Project - System</title>
+<base target="_top" />
+<meta http-equiv="Reply-to" content="mailto:webmaster@codeproject.com" />
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+<meta name="MS.LOCALE"          content="en-US" />
+<meta name="Description"        content="Tips and tricks of Windows masters." />
+<meta name="Search.TopicType"   content="kbArticle" />
+<meta name="Author"             content="Anton Bassov" />
+<meta name="Search.PublishDate" content="18 Aug 2005 14:00:00 GMT" />
+<meta name="Search.RevisedDate" content="18 Aug 2005 14:00:00 GMT" />
+
+</head>
+<body text="black" bgcolor="white" alink="red" link="blue" vlink="navy" style="margin: 0" >
+
+
+
+
+<H2>Introduction</H2>
+<P>Although making user-mode application enter the kernel is definitely an exciting exercise, it is far from being something unheard of. It has been first done by Matt Pietrek (he did it on Windows 95 many years ago). His technique was later adjusted to Windows NT by Prasad Dabak, Sandeep Phadke and Milind Borate. In order to enter the kernel right from an application, one has to set up call gate descriptor in <I>Global Descriptor Table</I> (GDT), so that an application can enter the kernel via the call gate. However, once user-mode code is not allowed to access GDT, above mentioned authors used a kernel-mode driver in order to set up call gate descriptor. Certainly, quite logical question arises - what is the point of entering the kernel without a driver if you still need a driver in order to make it work??? After all, it just defeats the purpose, don't you think?</P>
+<P>This article describes how user-mode application can access the kernel address space and set up call gate descriptor in GDT without using a driver. It explains how virtual-to-physical address translation works on 32-bit processors, and describes how the user-mode application can find out which physical address some given virtual address represents. "Methodology" of solving this task is 100% of my own design - you will be unable to find anything similar anywhere. This article also thoroughly explains how protection of kernel address space is implemented by Windows NT, how the transition from non-privileged to privileged mode can be made on x86-based system, and how applications can enter the kernel without a driver.</P>
+<P>In addition to the above, this article introduces the reader to <I>Advanced Programmable Interrupt Controller </I>(APIC), and explains how interrupt information can be obtained from it. This topic seems to be barely known to the Windows community, although APIC is briefly mentioned by Mark Russinovich and David Solomon in Windows Internals, fourth edition. However, this book does not explain how to actually program APIC. I never came across any explanation of APIC programming in any Windows-focused article either - I had to figure out everything myself from Intel manuals. Therefore, I believe this information must be of great interest to Windows developers.</P>
+<P>To summarize, if you want to learn more about the system internals, this article is right for you.</P>
+<H2>Accessing the kernel address space</H2>
+<P>Let's presume we want to access some address in the kernel address space, and to do it while running in user mode. Is it possible? Yes and no. If we try to access it directly as a virtual address, we will get Access Violation exception. However, there is a workaround - physical RAM can be opened as a section named <I>"\\Device\\PhysicalMemory"</I> with <CODE>NtOpenSection()</CODE> , and then mapped with <CODE>NtMapViewOfSection()</CODE> native API functions. By using this technique we can access any page in RAM. If we know which physical address our target address represents, our task is really easy - all we have to do is to map this physical address with <CODE>NtMapViewOfSection()</CODE> pointer, returned by this function, refers to the same physical address as our target address in the kernel address space, but it is numerically below 0x80000000, i.e. we are able to access it from the user mode. If we need a write access to it, we will have to do few extra things before mapping. The problem is that non-system processes, i.e. the ones that have not been started by the user SYSTEM, have no write access to <I>"\\Device\\PhysicalMemory"</I>. Therefore, you have to grant yourself a write access to <I>"\\Device\\PhysicalMemory"</I>. The code below does this:</P><PRE lang=mc++>EXPLICIT_ACCESS Access;PACL OldDacl=NULL, 
+                  NewDacl=NULL; PVOID security;
+HANDLE Section; 
+INIT_UNICODE_STRING(name, L<span class='cpp-string'>"\\Device\\PhysicalMemory"</span>);
+OBJECT_ATTRIBUTES oa ={<span class='cpp-keyword'>sizeof</span>(oa),<span class='cpp-literal'>0</span>,&amp;name,<span class='cpp-literal'>0</span>,<span class='cpp-literal'>0</span>,<span class='cpp-literal'>0</span>};  
+
+
+memset(&amp;Access, <span class='cpp-literal'>0</span>, <span class='cpp-keyword'>sizeof</span>(EXPLICIT_ACCESS));
+NtOpenSection(&amp;Section, WRITE_DAC | READ_CONTROL, &amp;oa);
+   
+GetSecurityInfo(Section, SE_KERNEL_OBJECT, 
+                         DACL_SECURITY_INFORMATION, 
+                         NULL, NULL, &amp;OldDacl,
+                         NULL, &amp;security);
+   
+Access.grfAccessPermissions = SECTION_ALL_ACCESS; 
+Access.grfAccessMode        = GRANT_ACCESS;
+Access.grfInheritance       = NO_INHERITANCE;
+Access.Trustee.MultipleTrusteeOperation = 
+                         NO_MULTIPLE_TRUSTEE;
+Access.Trustee.TrusteeForm  = TRUSTEE_IS_NAME;
+Access.Trustee.TrusteeType  = TRUSTEE_IS_USER;
+Access.Trustee.ptstrName = <span class='cpp-string'>"CURRENT_USER"</span>;
+  
+
+SetEntriesInAcl(<span class='cpp-literal'>1</span>, &amp;Access, OldDacl, &amp;NewDacl);
+SetSecurityInfo(Section, SE_KERNEL_OBJECT,
+                         DACL_SECURITY_INFORMATION, 
+                         NULL, NULL, NewDacl, 
+                         NULL);
+
+CloseHandle(Section);</PRE>
+<P>In order to run this code, you have to be logged on as a user with Administrator privileges. In my experience, restricted users cannot open <I>"\\Device\\PhysicalMemory"</I> for any access - <CODE>NtOpenSection()</CODE> will always return an error code, even if you have requested read-only access to <I>"\\Device\\PhysicalMemory"</I>.</P>
+<P>Therefore, as long as we have Admin privileges, we can gain access to any page in RAM, and do it while running in user mode - even if the page in question corresponds to some address in the kernel address space. In other words, we can gain indirect access to the kernel address space. Don't you find it exciting? However, in order to make any practical use of such possibility, we have to find out which physical address our target address in the kernel address space represents. Kernel-mode drivers can call <CODE>MmGetPhysicalAddress()</CODE>, but user-mode code has no chance of calling this function. Furthermore, there is no user-mode API function that may be of help. Therefore, we have to figure out everything ourselves. This is why, first of all, we have to learn how virtual - to - physical address translation works on 32-bit processors.</P>
+<P>On x86 system page size can be either 4 KB or 4 MB. If page size is 4KB, 32-bit virtual address contains three pieces of information that CPU needs in order to get to the physical location this address represents. Low-order 12 bits of a virtual address represent an offset to the physical memory page. Bits 12-21 of a virtual address represent an index in a <I>Page Table</I>, which holds 1024 entries, describing physical pages. Every process may theoretically have up to 1024 page tables. Therefore,1024*1024*4096 gives us 4 GB of addressable space. Addresses of all page tables of a process are stored in a <I>Page Directory</I>. Bits 31-22 of a virtual address are used for locating the appropriate page table in a page directory. Every process maintains its own page directory. Physical address of the page directory of currently running process is stored in CR3 register. This register is supposed to be modified only upon the task switch, so it is not supposed to be accessed by anyone, apart from the system. Upon the task switch, the system loads CR3 with a different page directory. As a result, virtual address that previously referred to some physical page X may now be referring either to the same page X, or to some other page Y, or to no page at all. This is why any virtual address, valid in the address space of the process A, may be meaningless for the process B, unless they refer to the same physical address. For example, drivers are loaded into RAM only once, and are mapped to the same virtual addresses in all processes, so that change of CR3 does not affect them.</P>
+<P>Binary layout of every Page Directory and Page Table entry is described by the following 32-bit structure:</P><PRE lang=mc++><span class='cpp-keyword'>struct</span> PageDirectoryOrTableEntry
+{
+    DWORD Present:<span class='cpp-literal'>1</span>;
+    DWORD ReadWrite:<span class='cpp-literal'>1</span>;
+    DWORD UserSupervisor:<span class='cpp-literal'>1</span>;
+    DWORD WriteThrough:<span class='cpp-literal'>1</span>;
+    DWORD CacheDisabled:;
+    DWORD Accessed:<span class='cpp-literal'>1</span>;
+    DWORD Reserved:<span class='cpp-literal'>1</span>;
+    DWORD Size:<span class='cpp-literal'>1</span>;
+    DWORD Global:<span class='cpp-literal'>1</span>;
+    DWORD Unused:<span class='cpp-literal'>3</span>;
+    DWORD PhysicalAddress:<span class='cpp-literal'>20</span>
+};</PRE>
+<P>If page size is 4 KB, address translation works the following way:</P>
+<OL>
+<LI>CPU gets the page directory of currently running process from CR3 register. High-order 10 bits of the virtual address represent the index (i), which CPU is going to use in order to locate the address of the page table, corresponding to the given virtual address, in this directory. If <I>Present</I> bit of directory's i<SUP>th</SUP> entry is not set, CPU raises Page Fault exception (INT 0xE). Page Fault exception may be raised for various reasons, such as invalid address, write access to read-only memory, etc. Therefore, first of all the system checks the reason for Page Fault exception. If the exception has been raised only because of the state of <I>Present </I>bit , the system comes to the conclusion that page table in question has been swapped to the disk. Therefore, it loads page table in question into RAM, sets <I>Present</I> bit of corresponding page directory entry, and CPU tries to access the virtual address again. All the above activities are transparent to the client code. 
+<LI>After having located the page table, CPU proceeds to locating the page, corresponding to the given virtual address, in this table. Bits 12-21 of the virtual address represent the index (i), which CPU is going to use in order to locate the address of the target page in the page table. If <I>Present</I> bit of page table's i<SUP>th</SUP> entry is not set, CPU raises Page Fault exception, which is handled by the system in a way we have already seen. 
+<LI>Finally, after having located the target page, CPU uses low-order 12 bits of the virtual address as an offset into the page. </LI></OL>
+<P>This is how address translation works if page size is 4 KB. If page size is 4 MB, 10 high-order bits of the address represent the index that CPU needs to locate the page in the page directory, and remaining 22 bits are used as an offset into this page (1024*4 MB gives us, again, 4 GB of addressable space).</P>
+<P>64-bit processors use more advanced address translation schemes. For example, Itanium allows so-called <I>Data Execution Prevention </I>(DEP) at the hardware level. It is mistakenly believed by many that DEP is a feature of Windows XP SP2. It is not - DEP is a CPU feature that Windows XP SP2 may take advantage of. If Windows XP SP2 runs on the CPU without support for DEP, DEP is not going to work - there is no way to prevent executing handcrafted machine instructions on processors without DEP feature. We are going to stick to 32- bit processors and 4 KB pages in our discussion.</P>
+<P>Under Windows NT, page directory of currently running process is mapped to the virtual address 0xC0300000. This information, combined with our knowledge of virtual-to-physical address translation, leads us to two conclusions:</P>
+<OL>
+<LI>Under Windows NT, 0x300<SUP>th</SUP> entry of a page directory holds the physical address of the page directory itself. 
+<LI>Page table, corresponding to some virtual address, is accessible as 0xC0000000+((address&gt;&gt;10)&amp;0x3FF000). With such translation page table, corresponding to the address 0xC0300000, is 0xC0300000 itself. In other words, page directory is also a page table that corresponds to the virtual address of a page directory itself. </LI></OL>
+<P>Now let's try some practical exercise. Imagine the following kernel-mode code:</P><PRE lang=mc++><span class='cpp-keyword'>_asm</span>
+{
+    mov ebx,<span class='cpp-literal'>0xfec00000</span>
+    or ebx, <span class='cpp-literal'>0x13</span>
+    mov eax,<span class='cpp-literal'>0xc0000000</span>
+    mov dword ptr[eax],ebx
+}
+
+<span class='cpp-comment'>//what are we doing??? Are we insane???</span>
+PULONG array=NULL;
+array[<span class='cpp-literal'>0</span>]=<span class='cpp-literal'>1</span>;</PRE>
+<P>What is going to happen if we run this code? The answer seems to be obvious, but it is wrong - we are not going to crash. We wrote 0xfec00013 ( 20 upper bits indicate the physical page 0xfec00, 12 lower bits indicate <CODE>Present</CODE>, <CODE>ReadWrite</CODE> and <CODE>CacheDisabled</CODE> flags that are set) as a very first entry of the page table, address of which is stored in the very first entry of our page directory. Now think of how CPU is going to translate the virtual address 0, and you will understand that, due to our modification, it will translate 0 to the physical address 0xfec00000. From now on virtual range 0 - 0x1000 becomes a perfectly valid virtual range in the address space of the process that runs this code!!! Null pointer becomes usable, and it refers to the physical address 0xfec00000!!! Not so boring, don't you think??? Later you will see that such tricks can be extremely useful in some situations.</P>
+<P>However, let's get back to our task - as you may remember, our current task is to discover which physical address our target virtual address represents. Furthermore, this job has to be done by user-mode code. If we know the address of the page directory of our process in physical RAM, our task is trivial. Let's presume our target virtual address is V. We will map page directory to the virtual address D by <CODE>NtMapViewOfSection()</CODE>, and think of D as of an array of 1024 <CODE>DWORD</CODE>s. The physical page, described by 20 upper bits of (V&gt;&gt;22)<SUP>th</SUP> entry of D, is a page table, corresponding to the virtual address V. Therefore, we will map this page to the virtual address T, and, again, think of it as an array of 1024 <CODE>DWORD</CODE>s - 20 upper bits of ((V&gt;&gt;12)&amp;0x3FF)<SUP>th</SUP> entry of T is a physical page that the virtual address V represents. Pure and simple. There is only one problem - CR3 register, from which the physical address of our process's page directory is available, cannot be accessed by the user-mode code. Therefore, first of all we have to find the physical address of the page directory of our process.</P>
+<P>What we are going to do is run a memory scan, mapping every page in RAM into the address space of our process, so that sooner or later we will come across the page directory of our process. How are we going to recognize it? Let's presume the physical page we examine is P, and it is mapped to the virtual address V by <CODE>NtMapViewOfSection()</CODE>. We will think of V as of an array of 1024 <CODE>DWORD</CODE>s. If P is a physical page that holds the page directory of our process, then:</P>
+<OL>
+<LI>20 upper bits of 0x300<SUP>th</SUP> entry of V must be equal to P, because 0x300<SUP>th</SUP> entry of a page directory must hold the physical address of the page directory itself 
+<LI>Lowest bit of 0x300<SUP>th</SUP> entry of V must be set, because it indicates the presence of page in RAM 
+<LI>If P is a page directory, then (V&gt;&gt;22)<SUP>th</SUP> entry of V describes a page table, corresponding to the virtual address V itself, and this page table is definitely loaded into RAM. Therefore, lowest bit of (V&gt;&gt;22)<SUP>th</SUP> entry of V must be set. </LI></OL>
+<P>If any of the above is not true, we can conclude that P is <B>definitely</B> not our page directory, so we can proceed to the next page. Otherwise, we will map the page, described by the 20 upper bits of (V&gt;&gt;22)<SUP>th</SUP> entry of V (let's call the resulting virtual address T), and assume that T is a page table, corresponding to the virtual address V. If our assumption is correct, then:</P>
+<OL>
+<LI>20 upper bits of ((V&gt;&gt;12)&amp;0x3FF)<SUP>th</SUP> entry of T must be equal to P. 
+<LI>Lower bit of ((V&gt;&gt;12)&amp;0x3FF)<SUP>th</SUP> entry of T is set. </LI></OL>
+<P>If both the above conditions are met, we can conclude that P is really our page directory, so it can be accessed from the virtual address V . What makes us believe so? Read again about the virtual-to-physical address translation, think about the translation of V to its physical address P, and, I hope, everything will become clear to you. Look at the code below:</P><PRE lang=mc++><span class='cpp-comment'>//check how much RAM we've got</span>
+MEMORYSTATUS meminfo;GlobalMemoryStatus(&amp;meminfo);
+
+<span class='cpp-comment'>//get handle to RAM</span>
+
+status = NtOpenSection(&amp;Section,
+          SECTION_MAP_READ|SECTION_MAP_WRITE,&amp;oa);
+
+ 
+DWORD found=<span class='cpp-literal'>0</span>,MappedSize,x;
+LARGE_INTEGER phys;DWORD* entry; 
+PVOID DirectoryMappedAddress,TableMappedAddress;
+DWORD DirectoryOffset,TableOffset; 
+<span class='cpp-keyword'>for</span>(x=<span class='cpp-literal'>0</span>;x&lt;meminfo.dwTotalPhys;x+=<span class='cpp-literal'>0x1000</span>)
+{
+     <span class='cpp-comment'>//map current page in RAM</span>
+     MappedSize=<span class='cpp-literal'>4096</span>; 
+     phys.QuadPart=x; DirectoryMappedAddress=<span class='cpp-literal'>0</span>;
+     status = NtMapViewOfSection(Section, 
+                  (HANDLE) -<span class='cpp-literal'>1</span>, 
+                  &amp;DirectoryMappedAddress, 
+                  <span class='cpp-literal'>0L</span>,MappedSize, &amp;phys, 
+                  &amp;MappedSize, ViewShare,<span class='cpp-literal'>0</span>, 
+                  PAGE_READONLY);
+     <span class='cpp-keyword'>if</span>(status)<span class='cpp-keyword'>continue</span>;
+     entry=(DWORD*)DirectoryMappedAddress;
+
+     <span class='cpp-comment'>//get offsets</span>
+     DirectoryOffset=(DWORD)DirectoryMappedAddress;
+     TableOffset=(DWORD)DirectoryMappedAddress;
+     DirectoryOffset&gt;&gt;=<span class='cpp-literal'>22</span>;
+     TableOffset=(TableOffset&gt;&gt;<span class='cpp-literal'>12</span>)&amp;<span class='cpp-literal'>0x3ff</span>;
+
+
+     <span class='cpp-comment'>//let's check if this page can be a page </span>
+     <span class='cpp-comment'>//directory - 20 upper bits of 0x300-th entry</span>
+     <span class='cpp-comment'>//must be //equal to P, and Present bit must be </span>
+     <span class='cpp-comment'>//set in 0x300-th and V&gt;&gt;22-th entries.</span>
+     <span class='cpp-comment'>//If not,proceed to next page</span>
+     <span class='cpp-keyword'>if</span>((entry[<span class='cpp-literal'>0x300</span>]&amp;<span class='cpp-literal'>0xfffff000</span>)!=x 
+        ||(entry[<span class='cpp-literal'>0x300</span>]&amp;<span class='cpp-literal'>1</span>)!=<span class='cpp-literal'>1</span> 
+        || (entry[DirectoryOffset]&amp;<span class='cpp-literal'>1</span>)!=<span class='cpp-literal'>1</span>)
+          {NtUnmapViewOfSection((HANDLE) -<span class='cpp-literal'>1</span>, 
+             DirectoryMappedAddress);<span class='cpp-keyword'>continue</span>;}
+
+
+     <span class='cpp-comment'>//seems to be OK for the time being. Now let's </span>
+     <span class='cpp-comment'>//try to map a possible page table</span>
+     MappedSize=<span class='cpp-literal'>4096</span>; 
+     phys.QuadPart=(entry[DirectoryOffset]&amp;<span class='cpp-literal'>0xfffff000</span>); 
+     TableMappedAddress=<span class='cpp-literal'>0</span>;
+     status = NtMapViewOfSection(Section, (HANDLE) -<span class='cpp-literal'>1</span>, 
+                   &amp;TableMappedAddress, <span class='cpp-literal'>0L</span>,MappedSize,
+                   &amp;phys, &amp;MappedSize, ViewShare,<span class='cpp-literal'>0</span>, 
+                   PAGE_READONLY);
+
+     <span class='cpp-keyword'>if</span>(status){NtUnmapViewOfSection((HANDLE) -<span class='cpp-literal'>1</span>, 
+                    DirectoryMappedAddress);<span class='cpp-keyword'>continue</span>;}
+
+     <span class='cpp-comment'>//now let's check if this is really a page table If </span>
+     <span class='cpp-comment'>//yes, 20 upper bits of (V&gt;&gt;12)&amp;0x3ff-th</span>
+     <span class='cpp-comment'>//entry must be equal to P, and Present </span>
+     <span class='cpp-comment'>//bit must be set in this entry.</span>
+     <span class='cpp-comment'>//If the above is true, P is really a page directory</span>
+     entry=(DWORD*)TableMappedAddress;
+     <span class='cpp-keyword'>if</span>((entry[TableOffset]&amp;<span class='cpp-literal'>1</span>)==<span class='cpp-literal'>1</span> &amp;&amp; 
+          (entry[TableOffset]&amp;<span class='cpp-literal'>0xfffff000</span>)==x)found++;
+
+     NtUnmapViewOfSection((HANDLE) -<span class='cpp-literal'>1</span>, TableMappedAddress);
+
+     <span class='cpp-comment'>//directory is found - no need to proceed further</span>
+     <span class='cpp-keyword'>if</span>(found)<span class='cpp-keyword'>break</span>;
+     NtUnmapViewOfSection((HANDLE) -<span class='cpp-literal'>1</span>, 
+                      DirectoryMappedAddress); 
+}</PRE>
+<P>How reliable is this code? Can we somehow mistake some page in RAM for our page directory? Random coincidence of 42 bits is needed for such a mistake. Therefore, such mistakes may happen only in 1 out of 2 ^42 cases, i.e. probability of it is negligible, for the practical purposes. Can we somehow miss the page directory of our process? Our sequential scan is guaranteed to bump into it, unless it gets moved around in physical RAM while our code runs. Theoretically Memory Manager may move any page, including the page directory, in physical RAM, but this may happen only if the page in question had, at some point, been swapped to the disk, and later got reloaded to some other location in RAM. Once swapping frequently accessed pages to the disk degrades the performance dramatically, the system would not swap frequently accessed pages. A process has to stay inactive for quite a while before its page directory gets swapped to the disk - as long as the code runs, the page directory of its process gets accessed upon every instruction's execution, so it cannot become a candidate for paging. Therefore, we can safely assume that our page directory will remain at some fixed address in RAM throughout our code's execution. In other words, our approach is, in practical terms, quite reliable - I used it very, very, very many times without a <B>single</B>(!!!) failure.</P>
+<P>Now, once we know the physical address of our page directory, we can easily obtain the physical address, corresponding to any virtual one we are interested in - "methodology" of solving this task has already been described above. Let's get the physical address of the page that holds <I>Global Descriptor Table</I> (GDT)</P><PRE lang=mc++><span class='cpp-comment'>//get base address of gdt</span>
+
+BYTE gdtr[<span class='cpp-literal'>8</span>]; DWORD gdtbase,physgdtbase;
+<span class='cpp-keyword'>_asm</span>
+{
+    sgdt gdtr
+    lea eax,gdtr
+    mov ebx,dword ptr[eax+<span class='cpp-literal'>2</span>]
+    mov gdtbase,ebx
+}
+
+<span class='cpp-comment'>//get directory and table offsets</span>
+DirectoryOffset=gdtbase;TableOffset=gdtbase;
+DirectoryOffset&gt;&gt;=<span class='cpp-literal'>22</span>;
+TableOffset=(TableOffset&gt;&gt;<span class='cpp-literal'>12</span>)&amp;<span class='cpp-literal'>0x3ff</span>;
+
+entry=(DWORD*)DirectoryMappedAddress;
+
+<span class='cpp-comment'>//map page table - phys. address of it is 20 </span>
+<span class='cpp-comment'>//upper bits of (V-22)-th entry of page directory</span>
+MappedSize=<span class='cpp-literal'>4096</span>; 
+phys.QuadPart=(entry[DirectoryOffset]&amp;<span class='cpp-literal'>0xfffff000</span>); 
+TableMappedAddress=<span class='cpp-literal'>0</span>;
+status = NtMapViewOfSection(Section, (HANDLE) -<span class='cpp-literal'>1</span>, 
+              &amp;TableMappedAddress, <span class='cpp-literal'>0L</span>,MappedSize,
+              &amp;phys, &amp;MappedSize, ViewShare,<span class='cpp-literal'>0</span>, 
+              PAGE_READONLY);
+
+<span class='cpp-comment'>//phys page is in 20 upper bits of (V&gt;&gt;12)&amp;0x3ff-th </span>
+<span class='cpp-comment'>// entry of page table</span>
+<span class='cpp-comment'>// this is what we need</span>
+entry=(DWORD*)TableMappedAddress;
+physgdtbase=(entry[TableOffset]&amp;<span class='cpp-literal'>0xfffff000</span>);
+<span class='cpp-comment'>//unmap everything</span>
+NtUnmapViewOfSection((HANDLE) -<span class='cpp-literal'>1</span>, 
+                      TableMappedAddress);
+
+NtUnmapViewOfSection((HANDLE) -<span class='cpp-literal'>1</span>, 
+                  DirectoryMappedAddress);</PRE>
+<P>GDT is not accessible to the user-mode code, but, as it has been explained above, this limitation does not apply to us any more - we have already found the physical address of the page where it resides, haven't we? In order to access GDT, first we have to map this page to some virtual address V with <CODE>NtMapViewOfSection()</CODE>.</P>
+<P>There is no guarantee that GDT starts right at the beginning of the page, so we have to use the 12 lower bits of its virtual address as an offset into the page. Therefore, we have to add (gdtbase&amp;0xFFF) to V. From now on we are able to read and write GDT from the virtual address V. Therefore, we can get the read and write access to the kernel address space right from the user-mode application. Would it not be great if we could get the execute access as well? This is what we are up to, this is why everything above has been said, and this is why we got the physical address of GDT, rather than some other address in the kernel address space - GDT will help us to enter the kernel mode right from our program, without a driver.</P>
+<H2>Code privilege level and protection</H2>
+<P>GDT can hold <I>Segment</I> descriptors, <I>Local Descriptor Table</I> (LDT) descriptors, <I>Call Gate</I> descriptors and <I>Task State Segment</I> (TSS) descriptors. All the above descriptors are all 8 bytes in size, although each of them has its own binary layout . Binary layout of Segment descriptors and Call Gate descriptors is described by the following 8-byte structures:</P><PRE lang=mc++><span class='cpp-keyword'>struct</span>  SegmentDescriptor
+{
+    WORD LimitLow;
+    WORD BaseLow;
+    DWORD BaseMid : <span class='cpp-literal'>8</span>;
+    DWORD Type : <span class='cpp-literal'>5</span>;
+    DWORD Dpl : <span class='cpp-literal'>2</span>;
+    DWORD Pres : <span class='cpp-literal'>1</span>;
+    DWORD LimitHi : <span class='cpp-literal'>4</span>;
+    DWORD Sys : <span class='cpp-literal'>1</span>;
+    DWORD Reserved_0 : <span class='cpp-literal'>1</span>;
+    DWORD Default_Big : <span class='cpp-literal'>1</span>;
+    DWORD Granularity : <span class='cpp-literal'>1</span>;
+    DWORD BaseHi : <span class='cpp-literal'>8</span>;
+      
+}
+
+<span class='cpp-keyword'>struct</span> CallGateDescriptor
+
+{
+   WORD offset_low;
+   WORD selector;
+   BYTE param_count :<span class='cpp-literal'>5</span>;
+   BYTE   unused   :<span class='cpp-literal'>3</span>;
+   BYTE  type        :<span class='cpp-literal'>5</span>;
+   BYTE  dpl         :<span class='cpp-literal'>2</span>;
+   BYTE present     :<span class='cpp-literal'>1</span>;
+   WORD offset_high;
+};</PRE>
+<P>LDTs and call gates are not used by Windows NT. Although, for performance reasons, all user processes run in the context of a single task under Windows NT, there are few TSS descriptors in GDT. They are mainly reserved for the "exceptional circumstances", i.e. system crash - their task is to make sure that the system is able to operate long enough to throw a blue screen before the CPU resets itself. They are of no interest to us anyway. What about segment descriptors? One may think that, once Windows implements the flat memory model, we should not be bothered about segment descriptors.</P>
+<P>In actuality, things are not that simple. Windows flat memory model is implemented by setting <CODE>BaseLow</CODE>, <CODE>BaseMid</CODE> and <CODE>BaseHi</CODE> fields of code, data, stack and extra segment descriptors in GDT to 0. As a result, code, data, stack and extra segments are mapped to the same virtual address 0, so we have no need to specify segment and offset when we address memory. However, segments are still there behind the scenes, because there is no way to implement protected operating system on x86-based machine without using segmentation. The problem is that, strictly speaking, there is no such thing as kernel or user operating mode on x86-based system. Instead, the ability to execute privileged instructions and access supervisor-only pages is controlled by <I>Descriptor Privilege Level</I> (DPL) field of the code segment descriptor. Therefore, in order to separate privileged code from non-privileged one, two code segments are needed - privileged code segment must have DPL 0, and non-privileged one must have DPL 3. Although they may be mapped to the same virtual address 0, they will be treated as separate code segments by the processor. CS register is interpreted as the offset in bytes from the beginning of the table to the descriptor of the currently running code segment, ORed with the DPL of this code segment. This is how CPU knows the privilege level of the currently running code. Under Windows NT, CS register value can be either 0X8 (when privileged code executes), or 0X1B (when non-privileged code executes).</P>
+<P>Therefore, privilege level is defined by the CS register, rather than the address of the code itself. If some function executes at the time when CS equals 0X8, it is treated as privileged code, but if exactly the same function executes at the time when CS equals 0X1B, it is treated as non-privileged one. I predict your questions - after all, non-privileged code has no chance to access the addresses above 0x80000000. There must be some contradiction then? Not at all. Look at the <CODE>PageDirectoryOrTableEntry</CODE> structure once again, pay special attention to <I>UserSupervisor</I> bit, and everything will become clear to you - Windows just marks those pages that map to the addresses above 0x80000000 as supervisor-only in their page tables. If non-privileged code tries to access such page, access violation exception gets raised. Any function that resides in such page just cannot run if CS equals 0X1B - access violation exception will get raised straightaway. Therefore, kernel address space protection is achieved by combining segmentation with page-level protection.</P>
+<P>Transition from non-privileged code segment to privileged one can be made in one of the following ways:</P>
+<OL>
+<LI>Via INT n instruction - This instruction pushes the value of user-mode SS register, the value of user-mode ESP, EFLAGS register, user-mode CS register and the return address (all pushes occur in the above described order) on the kernel stack, and transfers execution to INT n handler. Windows NT sets the DPL of Interrupt Descriptor Table entries in such way that the user-mode code is allowed to execute only the interrupts 0X3, 0X4, 0X2A, 0X2B, 0X2C, 0X2D and 0X2E. 
+<LI><CODE>SYSENTER</CODE> instruction - This instruction sets the ESP of the calling thread to the value, specified by <CODE>SYSENTER_ESP_MSR</CODE> model-specific register, CS to the value, specified by <CODE>SYSENTER_CS_MSR</CODE> model-specific register, and transfers execution to the address, specified by <CODE>SYSENTER_EIP_MSR</CODE> model-specific register (these registers cannot be accessed by user-mode code). Flags and return address are not preserved. Windows NT/2000 does not use <CODE>SYSENTER</CODE> instruction, and under Windows XP this instruction transfers execution to the system service dispatcher. 
+<LI>Far call via the call gate - When the kernel entry is made via the call gate, CPU copies up to 32 <CODE>DWORD</CODE>s (the exact number is specified by <CODE>param_count</CODE> field of call gate descriptor) from the user stack to the kernel one, then pushes the user-mode CS and the return address to the kernel stack, then sets CS to the value, specified by <I>selector</I> field of call gate descriptor, and then transfers execution to the address, specified by <CODE>offset_low</CODE> and <CODE>offset_high</CODE> fields of call gate descriptor. Windows does not use call gates. </LI></OL>
+<P>First 2 options are used by Windows, and they transfer the execution to some system-defined address. Therefore, we cannot use them in order to transfer execution to some arbitrary address of our own choice. Call gates have quite a different story - once Windows does not use them, we are free to use call gates the way we like. If we set up a call gate in GDT, we can transfer the execution to any address that we have specified in the call gate descriptor. Certainly, this address has to be valid in the address space of our process, but it does not have to reside in the kernel address space. Privileged code can access any address that is valid in the address space of the calling process, and, as you must have understood, the privilege level of running code is defined by the value of CS, rather than EIP, register. Therefore, if we specify the address of some function, implemented by our application, in the call gate descriptor, and then call it via the call gate, this function will be treated as a privileged code by CPU, although it resides in the user address space of our process. This function will be able to access any memory address, IO ports, raise interrupts, call <I>ntoskrnl.exe</I> exports, i.e. do almost everything that kernel-mode drivers can do. At the same time, this function should not try calling API functions that are implemented by the user-mode DLLs. Why? Because these API functions may call native API, and native API functions invoke system services, i.e. enter the kernel via the system service dispatcher - at the time when we are already in privileged mode!!!. This is not going to do us any good. The general rule is that the less Windows knows about our tricks, the better it is for us. How are we going to return back to the user mode? It can be done by either <CODE>IRETD</CODE>, <CODE>SYSEXIT</CODE> or <CODE>RETF</CODE> instructions. Although the way the return is made is supposed to match the way the call has been made, this is not an absolute necessity. For example, under Window XP, the return from INT 0x2B handler is made by <CODE>SYSEXIT</CODE>, rather than <CODE>IRETD</CODE>, instruction - as long as both the parties adjust the kernel and user stacks to the way they handle entry and return, everything works fine. In our particular case <CODE>RETF</CODE> instruction is, apparently, the most logical way of leaving the kernel mode, so we are going to return back to the user mode with <CODE>REFT</CODE> instruction.</P>
+<H2>Setting up call gate in GDT</H2>
+<P>Now we know everything we need to know in order to set up a call gate in GDT and enter the kernel right from our application. Look at the code below:</P><PRE lang=mc++><span class='cpp-comment'>//now let's map gdt</span>
+PBYTE GdtMappedAddress=<span class='cpp-literal'>0</span>;
+phys.QuadPart=physgdtbase;
+MappedSize=<span class='cpp-literal'>4096</span>;
+NtMapViewOfSection(Section, (HANDLE) -<span class='cpp-literal'>1</span>, 
+              (PVOID*)&amp;GdtMappedAddress, 
+              <span class='cpp-literal'>0L</span>,MappedSize, &amp;phys, 
+              &amp;MappedSize, ViewShare,<span class='cpp-literal'>0</span>, 
+              PAGE_READWRITE);
+gdtbase&amp;=<span class='cpp-literal'>0xfff</span>;
+GdtMappedAddress+=gdtbase;
+
+CallGateDescriptor * gate=
+   (CallGateDescriptor * )GdtMappedAddress;
+
+<span class='cpp-comment'>//now let's find free entry in GDT. Type of </span>
+<span class='cpp-comment'>//current gdt entry does not matter - Present</span>
+<span class='cpp-comment'>// bit is 48-th bit for all type of </span>
+<span class='cpp-comment'>//descriptors, so we interpret all descriptors</span>
+<span class='cpp-comment'>//as call gates</span>
+selector=<span class='cpp-literal'>1</span>;
+<span class='cpp-keyword'>while</span>(<span class='cpp-literal'>1</span>)
+{
+    <span class='cpp-keyword'>if</span>(!gate[selector].present)<span class='cpp-keyword'>break</span>;
+    selector++;
+}
+
+<span class='cpp-comment'>// now let's set up a call gate</span>
+gate[selector].offset_low  = 
+   (WORD)((DWORD)kernelfunction &amp; <span class='cpp-literal'>0xFFFF</span>);
+gate[selector].selector     = <span class='cpp-literal'>8</span>;
+<span class='cpp-comment'>//we will pass a parameter</span>
+gate[selector].param_count  = <span class='cpp-literal'>1</span>; 
+gate[selector].unused    = <span class='cpp-literal'>0</span>;
+<span class='cpp-comment'>// 32-bit callgate</span>
+gate[selector].type       = <span class='cpp-literal'>0xc</span>;     
+     
+<span class='cpp-comment'>// must be 3</span>
+gate[selector].dpl          = <span class='cpp-literal'>3</span>;      
+gate[selector].present      = <span class='cpp-literal'>1</span>;
+gate[selector].offset_high = 
+   (WORD)((DWORD)kernelfunction &gt;&gt; <span class='cpp-literal'>16</span>);
+      
+
+<span class='cpp-comment'>//we don't need physical memory any more</span>
+NtUnmapViewOfSection((HANDLE) -<span class='cpp-literal'>1</span>, 
+                       GdtMappedAddress);
+CloseHandle(Section);</PRE>
+<P>First of all, we map GDT in a way we have already described above, and look for some unused entry in it. All descriptors in GDT are 8 bytes in size, with presence indicated by the 48<SUP>th</SUP> bit. This is the same for all types of descriptors. Therefore, when we look for a free entry in GDT, we can treat all GDT entries as call gate descriptors, regardless of their actual type. After having found the free entry, we set it up as a call gate descriptor. We set its type to 0XC in order to indicate 32-bit call gate, its DPL to 3, so that it is accessible to user-mode code, its <CODE>selector</CODE> field to 0X8, and its <CODE>offset_low</CODE> and <CODE>offset_high</CODE> fields to respectively 16 low-order and 16 high-order bits of the function we are about to call. What about a parameter, specified by the <CODE>param_count</CODE> field? I believe that, this article is all about doing unconventional things, it would be a good idea to make our kernel code do something that is not so widely known to the general public. One of the articles on the CodeProject explains to you how the interrupt information can be obtained from the registry. I am going to show you, apparently, more exciting way of getting interrupt information, without either translating interrupt resources or digging in the registry. Therefore, we are going to pass IRQ as parameter to our function, and our function will return interrupt vector that corresponds to this particular IRQ.</P>
+<H2>Advanced Programmable Interrupt Controller</H2>
+<P>How does the system map IRQs to interrupt vectors and define their priority? It depends on whether your machine supports <I>Advanced Programmable Interrupt Controller</I> (APIC). This can be discovered by CPUID instruction and read from <CODE>APIC_BASE_MSR</CODE> model-specific register. If APIC is present and you make CPUID instruction with 1 in EAX, bit 9 of EDX register will be set by this instruction. In order to find out whether APIC is enabled, you have to read the <CODE>APIC_BASE_MSR</CODE> model-specific register - bit 11 of it must be set if APIC is enabled. Unless your computer is completely outdated, I am 99.9% sure that APIC is present and enabled on your machine. If it is not, then the interrupt vector, corresponding to some given IRQ, equals 0x30+IRQ, so that timer (IRQ0) interrupt vector is 0x30, keyboard (IRQ1) interrupt vector is 0x31, etc. This how how Windows NT maps hardware interrupts if APIC is not present or disabled. In such cases interrupt priority is implied by IRQ - there is nothing than can be done here.</P>
+<P>If APIC is present and enabled, things become much more interesting to program. Every CPU in the system has its own local APIC, physical address of which is specified by <CODE>APIC_BASE_MSR</CODE> model-specific register. Local APIC can be programmed by reading from and writing to its registers. For example, processor's IRQL can be manipulated via <I>Task Priority</I> register, which is located at the offset of 0x80 from the local APIC's base address - this is what <CODE>KeRaiseIrql()</CODE> and <CODE>KeLowerIrql()</CODE> do. If you want to raise an interrupt, you can do it via <I>Interrupt Command</I> register, which is located at the offset of 0x300 from the local APIC's base address - this is what <CODE>HalRequestSoftwareInterrupt()</CODE> does. You can also specify whether you want the CPU to interrupt itself or whether you want interrupt to be dispensed to all CPUs in the system. Local APIC programming is quite an extensive topic, so it is well beyond the scope of this article. If you need more information, I would strongly advise you to read Volume 3 of Intel Developer's Manual.</P>
+<P>All local APICs communicate with IO APIC, which is located on the motherboard, via APIC bus. IO APIC maps IRQs to interrupt vectors, and it is able to map up to 24 interrupts. IO APIC can be programmed by reading from and writing to its registers. These are 32-bit <I>ID Register</I> (located at the offset of 0), 32-bit <I>Version Register</I> (located at the offset of 0X1), 32-bit <I>Arbitration Register </I>(located at the offset of 0X2), and 24 64-bit <I>Redirection Table Registers</I>, with every Redirection Table Register corresponding to some given IRQ. The location of Redirection Table Register, corresponding to any given IRQ, can be calculated as 0X10+2*IRQ. If you want to know the binary layout of Redirection Table, I suggest you should read Intel IOAPIC manual - we are interested only in 8 low-order bits of Redirection Table, because they indicate interrupt vector that corresponds to the given IRQ. Interrupt priority can be calculated as vector/16, and, once operating system designers can map IRQs to interrupt vectors in any way they wish, they can assign any interrupt priority level to any given IRQ.</P>
+<P>IO APIC uses indirect addressing scheme, which means all the above mentioned registers cannot be accessed directly. How can they be accessed then??? IO APIC provides 2 direct access registers for this purpose. These are <CODE>IOREGSEL</CODE> and <CODE>IOWIN</CODE> registers, located at the offsets of respectively 0 and 0X10 from IO APIC's base address. IO APIC is mapped to the physical memory at the address 0XFEC00000. Although Intel allows operating system designers to relocate IO APIC to some other physical address, Windows NT does not relocate it. Therefore, we will make a bold assumption that IO APIC is located at the physical address 0XFEC00000 on your machine, so that physical addresses of <CODE>IOREGSEL</CODE> and <CODE>IOWIN</CODE> registers are respectively 0XFEC00000 and 0XFEC00010. In order to access these registers, you have to map them to non-cached memory. In order to read any indirect access register, you have to write its offset to <CODE>IOREGSEL</CODE> register - subsequent read of <CODE>IOWIN</CODE> register will return the value of the target indirect access register. All reads are 32-bit. If you want to read 32 low-order or 32 high-order bits of Redirection Table Register that corresponds to some given IRQ, you have to write respectively 0X10+2*IRQ or 0X10+2*IRQ+1 to <CODE>IOREGSEL</CODE> register, and then read <CODE>IOWIN</CODE> register in order to get the sought information.</P>
+<P>How are we going to map IO APIC to the virtual memory? If we used a regular driver, we would call <CODE>MmMapIoSpace()</CODE>. However, in our case things are slightly different. If CPU treats our code as a privileged one, it does not necessarily imply that Windows always shares its opinion on the subject - everything depends on what you want to do. Some <I>ntoskrnl.exe's</I> exports ( for example, <CODE>ExAllocatePool()</CODE>) can be called by our code without a slightest problem, but <CODE>MmMapIoSpace()</CODE> is not among them - if our code calls <CODE>MmMapIoSpace()</CODE>, we will get a blue screen with <CODE>IRQL_NOT_LESS_OR_EQUAL</CODE> error code. What are we going to do then? This is when our trick with mapping some page to the virtual address 0 comes handy, so we are going to use it.</P>
+<P>The code below maps IO APIC to the virtual address 0, and obtains interrupt vector that corresponds to some given IRQ:</P><PRE lang=mc++> <span class='cpp-comment'>//map ioapic - make sure that we map </span>
+ <span class='cpp-comment'>//it to non-cached memory.</span>
+
+<span class='cpp-keyword'>_asm</span>
+{
+
+    mov ebx,<span class='cpp-literal'>0xfec00000</span>
+    or ebx,<span class='cpp-literal'>0x13</span>
+    mov eax,<span class='cpp-literal'>0xc0000000</span>
+    mov dword ptr[eax],ebx
+}
+
+
+<span class='cpp-comment'>//now we are about to get </span>
+<span class='cpp-comment'>//interrupt vector</span>
+PULONG array=NULL;
+
+<span class='cpp-comment'>//write 0x10+2*irq to IOREGSEL</span>
+array[<span class='cpp-literal'>0</span>]=<span class='cpp-literal'>0x10</span>+<span class='cpp-literal'>2</span>*irq;
+
+<span class='cpp-comment'>// subsequent read from IOWIN returns 32 </span>
+<span class='cpp-comment'>// low-order bits of Redirection Table</span>
+<span class='cpp-comment'>//that corresponds to our IRQ.</span>
+<span class='cpp-comment'>// 8 low-order bits are interrupt vector, </span>
+<span class='cpp-comment'>// corresponding to our IRQ</span>
+DWORD vector=(array[<span class='cpp-literal'>4</span>]&amp;<span class='cpp-literal'>0xff</span>);</PRE>
+<P>As you can see, IO APIC programming is among those things that are easily done than explained - so much explanation and only few simple lines of code. But why did we choose to map IO APIC to 0, rather than to some more conventional address? Just because the address 0 is guaranteed to be unused, so mapping IO APIC to this address is the very first thing that gets into the head.</P>
+<H2>Putting it all together</H2>
+<P>Now let's put it all together. Look at the code below - it calls the kernel function:</P><PRE lang=mc++><span class='cpp-comment'>// now we will get interrupt vectors</span>
+DWORD res; 
+DWORD resultarray[<span class='cpp-literal'>24</span>];
+ZeroMemory(resultarray,<span class='cpp-keyword'>sizeof</span>(resultarray));
+
+<span class='cpp-keyword'>for</span> (x=<span class='cpp-literal'>0</span>;x&lt;<span class='cpp-literal'>25</span>;x++)
+{
+
+    <span class='cpp-comment'>//let's call the function via the </span>
+    <span class='cpp-comment'>//call gate. Are you ready???</span>
+    
+    WORD   farcall[<span class='cpp-literal'>3</span>];
+    farcall[<span class='cpp-literal'>2</span>] = (selector&lt;&lt;<span class='cpp-literal'>3</span>);
+    <span class='cpp-keyword'>_asm</span>
+    {
+    
+        mov ebx,x
+        push ebx
+        call fword ptr [farcall]
+        mov res,eax
+    
+    }
+    
+    <span class='cpp-keyword'>if</span>(x==<span class='cpp-literal'>24</span>)<span class='cpp-keyword'>break</span>;
+    <span class='cpp-comment'>//if the return value is 500 and this </span>
+    <span class='cpp-comment'>//was not the final invocation,</span>
+    <span class='cpp-comment'>//apic is not present. Inform the user </span>
+    <span class='cpp-comment'>//about it, and that't it</span>
+    <span class='cpp-keyword'>if</span>(res==<span class='cpp-literal'>500</span>)
+    {
+        MessageBox(GetDesktopWindow(), 
+              <span class='cpp-string'>"APIC is not supported"</span>,
+              <span class='cpp-string'>"IRQs"</span>,MB_OK);
+        <span class='cpp-keyword'>break</span>;
+    }
+    
+    resultarray[x]=res;
+}</PRE>
+<P>There is no way to make a far call via the call gate in C, so we have no option other than calling the kernel function from ASM block. The client code in itself is straightforward - it pushes the value of IRQ on the stack, calls the kernel function via the call gate, and saves the result in the array. It does so for IRQs 0 to 23, plus makes a final invocation with non-existent IRQ24. Upon the receipt of 24 as a parameter, in order to make sure that no traces of our experiments are left anywhere, the kernel function cleans up the call gate in GDT. After having obtained all the information about all IRQs, we will inform the user about each IRQ with <CODE>MessageBox()</CODE>. I hope there is no need to list this code here.</P>
+<P>Now let's look at our kernel function:</P><PRE lang=mc++><span class='cpp-keyword'>void</span> kernelfunction(DWORD usercs,DWORD irq)
+{
+    DWORD absent =<span class='cpp-literal'>0</span>; 
+    BYTE gdtr[<span class='cpp-literal'>8</span>];
+    
+    <span class='cpp-comment'>//check if ioapic is </span>
+    <span class='cpp-comment'>//present and enabled</span>
+    
+    <span class='cpp-keyword'>if</span>(irq&lt;=<span class='cpp-literal'>23</span>)
+    {
+       <span class='cpp-keyword'>_asm</span>
+       {
+            mov eax,<span class='cpp-literal'>1</span>
+            cpuid
+            and edx, <span class='cpp-literal'>0x00000200</span>
+            cmp edx,<span class='cpp-literal'>0</span>
+            jne skip1
+            mov absent,<span class='cpp-literal'>1</span>
+            skip1: mov ecx,<span class='cpp-literal'>0x1b</span>
+            rdmsr
+            and eax,<span class='cpp-literal'>0x00000800</span>
+            cmp eax,<span class='cpp-literal'>0</span>
+            jne skip2
+            mov absent,<span class='cpp-literal'>1</span>
+       }
+        
+       <span class='cpp-comment'>//if APIC is enabled, get vector </span>
+       <span class='cpp-comment'>//from it and return</span>
+       skip2: <span class='cpp-keyword'>if</span>(!absent)
+              {
+                <span class='cpp-comment'>//map ioapic - make sure that we </span>
+                <span class='cpp-comment'>//map it to non-cached memory.</span>
+                <span class='cpp-comment'>//Certainly,we have /to do it only upon the</span>
+                <span class='cpp-comment'>//function's very first invocation, </span>
+                <span class='cpp-comment'>//i.e. when irq is 0         </span>
+                
+                <span class='cpp-keyword'>if</span>(!irq)
+                {
+                  <span class='cpp-keyword'>_asm</span>
+                  {
+                
+                    mov ebx,<span class='cpp-literal'>0xfec00000</span>
+                    or ebx,<span class='cpp-literal'>0x13</span>
+                    mov eax,<span class='cpp-literal'>0xc0000000</span>
+                    mov dword ptr[eax],ebx
+                  }
+                }
+                
+                <span class='cpp-comment'>//now we are about to get </span>
+                <span class='cpp-comment'>//interrupt vector</span>
+                PULONG array=NULL;
+                
+                <span class='cpp-comment'>//write 0x10+2*irq to IOREGSEL</span>
+                array[<span class='cpp-literal'>0</span>]=<span class='cpp-literal'>0x10</span>+<span class='cpp-literal'>2</span>*irq;
+                
+                <span class='cpp-comment'>// subsequent read from IOWIN returns </span>
+                <span class='cpp-comment'>// 32 low-order bits of Redirection Table</span>
+                <span class='cpp-comment'>//that corresponds to our IRQ.</span>
+                <span class='cpp-comment'>// 8 low-order bits are interrupt vector, </span>
+                <span class='cpp-comment'>// corresponding to our IRQ</span>
+                DWORD vector=(array[<span class='cpp-literal'>4</span>]&amp;<span class='cpp-literal'>0xff</span>);
+                
+                <span class='cpp-comment'>// return interrupt vector. Dont forget </span>
+                <span class='cpp-comment'>// that we must return with RETF,</span>
+                <span class='cpp-comment'>// and pop 4 bytes off the stack</span>
+                
+                
+                <span class='cpp-keyword'>_asm</span>
+                {
+                
+                    <span class='cpp-comment'>//</span>
+                    mov eax,vector
+                    mov esp,ebp
+                    pop ebp
+                    retf <span class='cpp-literal'>4</span>
+                }
+              }
+    }
+    
+    <span class='cpp-comment'>//either apic is not supported, or irq is </span>
+    <span class='cpp-comment'>//above 23,i.e. this is the last invocation</span>
+    <span class='cpp-comment'>//therefore, clean up gdt and return 500</span>
+    <span class='cpp-keyword'>_asm</span>
+    {
+        <span class='cpp-comment'>//clean up gdt</span>
+        sgdt gdtr
+        lea eax,gdtr
+        mov ebx,dword ptr[eax+<span class='cpp-literal'>2</span>]
+        mov eax,<span class='cpp-literal'>0</span>
+        mov ax,selector
+        shl eax,<span class='cpp-literal'>3</span>
+        add ebx,eax
+        mov dword ptr[ebx],<span class='cpp-literal'>0</span>
+        mov dword ptr[ebx+<span class='cpp-literal'>4</span>],<span class='cpp-literal'>0</span>
+        
+        <span class='cpp-comment'>// adjust stack and return</span>
+        mov eax,<span class='cpp-literal'>500</span>
+        mov esp,ebp
+        pop ebp
+        retf <span class='cpp-literal'>4</span>
+    }
+}</PRE>
+<P>Once our kernel function declares the local variables, and, hence, needs a standard function prolog, it does not make sense to write it as a naked routine . Our function is supposed to take only 1 parameter, but, once it is going to get invoked via the call gate, CPU will push the value of user-mode CS on the stack below the return address. Do you know a way of explaining it to the compiler? Me neither. Therefore, to make sure that the compiler generates the code properly, we present this extra value on the stack as a function parameter - we are going to ignore it anyway. If IRQ parameter is 24, i.e. this is the function's final invocation, or if APIC is disabled, <CODE>kernelfunction()</CODE> cleans up GDT and returns with the error code 500. If everything is OK, it maps IO APIC to the virtual address 0, obtains interrupt vector, corresponding to IRQ parameter, and returns this vector. There is nothing special here. The only thing worth mentioning is that we have to restore <CODE>EBP</CODE> and <CODE>ESP</CODE> registers before we return - this is very important. It is understandable that we have to return with <CODE>RETF</CODE> instruction, and to pop 4 bytes off the stack.</P>
+<P>There is one more thing left to deal with - we have to make sure that our code is suitable for running on both uni-processor and SMP machines. With the advent of hyperthreading technology (HT), we should always make an assumption that our code may run on SMP machine - CPU that supports HT is treated as two independent processors by Windows, and, as far as I am concerned, Intel does not produce CPUs without support for HT any more. Under Windows running on SMP machine, every CPU has its own GDT, and any thread may run on any CPU in the system by default. I hope you can imagine the mess we are guaranteed to create by allowing our code to be executed by different processors - we may set up a call gate while running on CPU A and try to enter the kernel while running on CPU B. Therefore, we have to prevent our code from running on more than one processor. This can be done in the following way (<CODE>go()</CODE> is the function that runs all the user-mode code that you've seen in this article):</P><PRE lang=mc++>DWORD dw;
+HANDLE thread=CreateThread(<span class='cpp-literal'>0</span>,<span class='cpp-literal'>0</span>,
+               (LPTHREAD_START_ROUTINE)go,
+               <span class='cpp-literal'>0</span>,CREATE_SUSPENDED,&amp;dw);
+
+SetThreadAffinityMask (thread,<span class='cpp-literal'>1</span>);
+ResumeThread(thread);</PRE>
+<P>If the target machine has more that one processor, calling <CODE>SetThreadAffinityMask()</CODE> makes sure that our code is allowed to run only on the processor that we have specified. Calling <CODE>SetThreadAffinityMask()</CODE> on uni-processor machine does not result in error - this call just has no effect. Therefore, the above adjustment is suitable for both uni-processor and SMP machines.</P>
+<H2>Conclusion</H2>
+<P>In conclusion I want to say a few words of warning. First of all, the functionality of our privileged code will <B>always</B> be limited, compared to that of conventional kernel-mode driver. You already know that not all <I>ntoskrnl.exe's</I> exports may be safely called by our code (<CODE>MmMapIoSpace()</CODE> is just one example). Therefore, you should use this approach sparingly. Second, I would not advise you to use any of these tricks in production applications - they are intended to be used only in the development of analysis tools, intrusion detection systems and other "unsupported" software. The problem with all unsupported tricks is that they may be system-specific. To make things even worse, they may be hardware-specific - the code that does not pose even a slightest problem on machine A can crash machine B, even if they both run the same version of Windows. Therefore, if your code works perfectly well on your development machine, it is too early to celebrate victory - you never know how it may behave on some other platform.</P>
+<P>The sample application has been thoroughly tested on my machine, which runs Windows XP SP2 - it works perfectly well and does not seem to pose even a slightest problem. However, I really don't know how it is going to behave on your system - it is your task to find it out. If something goes wrong, don't hesitate to inform me about it. In such cases, it would be great if you could provide me with some info about your machine (CPU, motherboard, OS version, etc.), as well as the description of the problem - who knows, maybe there are some more hidden bugs that are to be fixed. In order to run the sample, the only thing you have to do is to click on its bitmap, and then wait for message boxes - it may take a few seconds before they pop up, so you have to be patient.</P>
+<P>I would highly appreciate if you send me an e-mail with your comments and suggestions.</P>
+
+<!-- Article Ends -->
+
+
+
+</div>
+</span>
+
+<script type="text/javascript" src="/web/20070614155045js_/http://www.codeproject.com/script/togglePre.js"></script>
+
+<h2>Anton Bassov</h2>
+<div style="overflow:hidden"><table border=0><tr valign=top><td nowrap class=smallText ><br></td><td class=smallText><p class=smallText>Click <a href='/web/20070614155045/http://www.codeproject.com/script/profile/whos_who.asp?vt=arts&amp;id=846502'>here</a> to view Anton Bassov's online profile.</p></td></tr></table></div><br>
+<table cellpadding=4 width='100%' border=0><tr valign=top>
+<td width='100%'>
+</td>
+</tr>
+</table>
+</body>
+</html>
+
+
+
+
+
+<!--
+     FILE ARCHIVED ON 15:50:45 Jun 14, 2007 AND RETRIEVED FROM THE
+     INTERNET ARCHIVE ON 18:52:23 Sep 10, 2015.
+     JAVASCRIPT APPENDED BY WAYBACK MACHINE, COPYRIGHT INTERNET ARCHIVE.
+
+     ALL OTHER CONTENT MAY ALSO BE PROTECTED BY COPYRIGHT (17 U.S.C.
+     SECTION 108(a)(3)).
+-->
+
