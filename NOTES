@@ -2,3 +2,6 @@ plan of attack:
  - patch libc syscall instrs to int80 equivs
  - soviet iret
  - profit
+
+http://yarchive.net/comp/linux/ptrace_self_attach.html
+
