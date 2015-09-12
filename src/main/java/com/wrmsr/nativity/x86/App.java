@@ -58,9 +58,9 @@ public class App
         // Dis.run(trie);
 
         Ordering<Pair<Ref.Operand.Type, Ref.Operand.Address>> ord = Ordering.from((o1, o2) -> {
-            int c = ObjectUtils.compare(o1.getLeft(), o2.getRight());
+            int c = ObjectUtils.compare(o1.getLeft(), o2.getLeft());
             if (c == 0) {
-                c = ObjectUtils.compare(o1.getLeft(), o2.getRight());
+                c = ObjectUtils.compare(o1.getRight(), o2.getRight());
             }
             return c;
         });
