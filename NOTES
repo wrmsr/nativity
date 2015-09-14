@@ -7,3 +7,5 @@ http://yarchive.net/comp/linux/ptrace_self_attach.html
 https://github.com/xenserver/xen-4.6/blob/master/xen/arch/x86/x86_emulate/x86_emulate.c#L1959
 http://mail.openjdk.java.net/pipermail/hotspot-dev/2014-April/013639.html
 https://www.kernel.org/doc/Documentation/kernel-parameters.txt
+https://lagunita.stanford.edu/c4x/Engineering/CS316/asset/Processor_Microarchitecture.pdf
+https://github.com/cyrus-and/gdb-dashboard
