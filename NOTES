@@ -9,3 +9,16 @@ http://mail.openjdk.java.net/pipermail/hotspot-dev/2014-April/013639.html
 https://www.kernel.org/doc/Documentation/kernel-parameters.txt
 https://lagunita.stanford.edu/c4x/Engineering/CS316/asset/Processor_Microarchitecture.pdf
 https://github.com/cyrus-and/gdb-dashboard
+
+https://www-ssl.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-manual-325462.pdf @ 1949
+https://github.com/torvalds/linux/blob/master/Documentation/networking/ixgbevf.txt
+https://github.com/torvalds/linux/blob/de182468d1bb726198abaab315820542425270b7/drivers/net/ethernet/intel/ixgbevf/ixgbevf_main.c
+https://www-ssl.intel.com/content/dam/www/public/us/en/documents/datasheets/82599-10-gbe-controller-datasheet.pdf
+https://en.wikipedia.org/wiki/IEEE_802.1Q
+https://software.intel.com/en-us/articles/intel-performance-counter-monitor >
+https://software.intel.com/en-us/protected-download/328018/326559/step2
+
+https://en.wikipedia.org/wiki/CUDA_Pinned_memory
+https://lightsighter.github.io/CudaDMA/
+https://developer.nvidia.com/gpudirect
+https://www.phoronix.com/scan.php?page=news_item&px=NVIDIA-Nouveau-CUDA-Support
