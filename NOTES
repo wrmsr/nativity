@@ -17,6 +17,7 @@ https://www-ssl.intel.com/content/dam/www/public/us/en/documents/datasheets/8259
 https://en.wikipedia.org/wiki/IEEE_802.1Q
 https://software.intel.com/en-us/articles/intel-performance-counter-monitor >
 https://software.intel.com/en-us/protected-download/328018/326559/step2
+https://github.com/torvalds/linux/blob/master/drivers/pci/msi.c
 
 https://en.wikipedia.org/wiki/CUDA_Pinned_memory
 https://lightsighter.github.io/CudaDMA/
