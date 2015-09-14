@@ -26,3 +26,47 @@ https://www.phoronix.com/scan.php?page=news_item&px=NVIDIA-Nouveau-CUDA-Support
 
 http://www.rcollins.org/ddj/ddj.html
 http://www.agner.org/optimize/
+
+
+0000000000033810 <raise>:
+   33810:       64 8b 04 25 d4 02 00 00         mov    eax,DWORD PTR fs:0x2d4
+   33818:       64 8b 34 25 d0 02 00 00         mov    esi,DWORD PTR fs:0x2d0
+   33820:       85 f6                   test   esi,esi
+   33822:       75 2c                   jne    33850 <raise+0x40>
+   33824:       b8 ba 00 00 00          mov    eax,0xba
+   33829:       0f 05                   syscall
+   3382b:       89 c6                   mov    esi,eax
+   3382d:       64 89 04 25 d0 02 00 00         mov    DWORD PTR fs:0x2d0,eax
+   33835:       48 63 d7                movsxd rdx,edi
+   33838:       48 63 f6                movsxd rsi,esi
+   3383b:       48 63 f8                movsxd rdi,eax
+   3383e:       b8 ea 00 00 00          mov    eax,0xea
+   33843:       0f 05                   syscall
+   33845:       48 3d 00 f0 ff ff       cmp    rax,0xfffffffffffff000
+   3384b:       77 15                   ja     33862 <raise+0x52>
+   3384d:       f3 c3                   repz ret
+   3384f:       90                      nop
+   33850:       85 c0                   test   eax,eax
+   33852:       7f e1                   jg     33835 <raise+0x25>
+   33854:       a9 ff ff ff 7f          test   eax,0x7fffffff
+   33859:       75 17                   jne    33872 <raise+0x62>
+   3385b:       89 f0                   mov    eax,esi
+   3385d:       0f 1f 00                nop    DWORD PTR [rax]
+   33860:       eb d3                   jmp    33835 <raise+0x25>
+   33862:       48 8b 15 2f f7 34 00    mov    rdx,QWORD PTR [rip+0x34f72f]        # 382f98 <_IO_file_jumps+0xa98>
+   33869:       f7 d8                   neg    eax
+   3386b:       64 89 02                mov    DWORD PTR fs:[rdx],eax
+   3386e:       83 c8 ff                or     eax,0xffffffffffffffff
+   33871:       c3                      ret
+   33872:       f7 d8                   neg    eax
+   33874:       eb bf                   jmp    33835 <raise+0x25>
+   33876:       90                      nop
+   33877:       90                      nop
+   33878:       90                      nop
+   33879:       90                      nop
+   3387a:       90                      nop
+   3387b:       90                      nop
+   3387c:       90                      nop
+   3387d:       90                      nop
+   3387e:       90                      nop
+   3387f:       90                      nop

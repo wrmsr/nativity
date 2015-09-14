@@ -76,5 +76,8 @@ public class App
         for (Pair<Ref.Operand.Type, Ref.Operand.Address> pair : ord.sortedCopy(set)) {
             System.out.println(pair);
         }
+        System.out.println("\n");
+
+        Dis.run(trie);
     }
 }
