@@ -184,8 +184,16 @@ public class Dis
 
     public static class Disassembler
     {
-
         protected final List<Entry> prefixes = Lists.newArrayList();
+    }
+
+    public static void dis(ByteTrie<Entry> trie, byte[] buf)
+    {
+        if (buf.length > 15) {
+            // 2.3.11 AVX Instruction Length
+            // The AVX instructions described in this document (including VEX and ignoring other prefixes) do not exceed 11 bytes in length, but may increase in the future. The maximum length of an Intel 64 and IA-32 instruction remains 15 bytes.
+            throw new IllegalArgumentException("buf length must not exceed 15");
+        }
     }
 
     public static void run(ByteTrie<Entry> trie)
