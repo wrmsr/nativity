@@ -11,11 +11,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.wrmsr.nativity.x86;
+package com.wrmsr.nativity.util;
 
-import java.util.Iterator;
-import java.util.function.Supplier;
+import com.google.common.collect.PeekingIterator;
 
-public interface Dis extends Iterator<Dis>, Iterable<Instr>, Supplier<Instr>
+public interface MultiPeekingIterator<E> extends PeekingIterator<E>
 {
+    Iterable<E> peek(int size);
 }

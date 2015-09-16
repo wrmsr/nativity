@@ -16,6 +16,7 @@ package com.wrmsr.nativity.x86;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
 import com.google.common.collect.Sets;
+import com.wrmsr.nativity.util.ByteTrie;
 import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
@@ -24,7 +25,6 @@ import org.w3c.dom.Document;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
-import java.io.File;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Set;
@@ -49,7 +49,7 @@ public class App
 
         List<Ref.Entry> entries = Lists.newArrayList();
         Parsing.parseRoot(doc, entries);
-        Dis.ByteTrie<Ref.Entry> trie = Dis.buildTrie(entries);
+        ByteTrie<Ref.Entry> trie = DisImpl.buildTrie(entries);
 
         System.out.println(trie.toDetailedString());
         System.out.println();
@@ -78,6 +78,6 @@ public class App
         }
         System.out.println("\n");
 
-        Dis.run(trie);
+        DisImpl.run(trie);
     }
 }

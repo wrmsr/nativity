@@ -21,8 +21,8 @@ import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Set;
 
-import static com.wrmsr.nativity.x86.Utils.arrayIterable;
-import static com.wrmsr.nativity.x86.Utils.quoteAndEscapeStr;
+import static com.wrmsr.nativity.x86.Util.arrayIterable;
+import static com.wrmsr.nativity.x86.Util.quoteAndEscapeStr;
 
 public class Ref
 {

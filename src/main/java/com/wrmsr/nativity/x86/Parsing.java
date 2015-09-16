@@ -35,18 +35,18 @@ import static com.wrmsr.nativity.x86.Ref.Flags;
 import static com.wrmsr.nativity.x86.Ref.Note;
 import static com.wrmsr.nativity.x86.Ref.Operand;
 import static com.wrmsr.nativity.x86.Ref.Syntax;
-import static com.wrmsr.nativity.x86.Utils.buildChildElementListMap;
-import static com.wrmsr.nativity.x86.Utils.filterOutNull;
-import static com.wrmsr.nativity.x86.Utils.getAttributeOrNull;
-import static com.wrmsr.nativity.x86.Utils.getBinByteAttributeOrNegativeOne;
-import static com.wrmsr.nativity.x86.Utils.getByteAttributeOrNegativeOne;
-import static com.wrmsr.nativity.x86.Utils.getOne;
-import static com.wrmsr.nativity.x86.Utils.getOneOrThrow;
-import static com.wrmsr.nativity.x86.Utils.getOneText;
-import static com.wrmsr.nativity.x86.Utils.iterChildElements;
-import static com.wrmsr.nativity.x86.Utils.iterChildNodes;
-import static com.wrmsr.nativity.x86.Utils.parseHexByte;
-import static com.wrmsr.nativity.x86.Utils.parseSeparatedHexBytes;
+import static com.wrmsr.nativity.x86.Util.buildChildElementListMap;
+import static com.wrmsr.nativity.x86.Util.filterOutNull;
+import static com.wrmsr.nativity.x86.Util.getAttributeOrNull;
+import static com.wrmsr.nativity.x86.Util.getBinByteAttributeOrNegativeOne;
+import static com.wrmsr.nativity.x86.Util.getByteAttributeOrNegativeOne;
+import static com.wrmsr.nativity.x86.Util.getOne;
+import static com.wrmsr.nativity.x86.Util.getOneOrThrow;
+import static com.wrmsr.nativity.x86.Util.getOneText;
+import static com.wrmsr.nativity.x86.Util.iterChildElements;
+import static com.wrmsr.nativity.x86.Util.iterChildNodes;
+import static com.wrmsr.nativity.x86.Util.parseHexByte;
+import static com.wrmsr.nativity.x86.Util.parseSeparatedHexBytes;
 
 public class Parsing
 {

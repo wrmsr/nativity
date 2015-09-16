@@ -31,9 +31,9 @@ import java.util.Map;
 
 import static com.wrmsr.nativity.util.Maps.buildMapToList;
 
-public class Utils
+public class Util
 {
-    private Utils()
+    private Util()
     {
     }
 
