@@ -13,20 +13,29 @@
  */
 package com.wrmsr.nativity.x86;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
+import com.google.common.collect.PeekingIterator;
 import com.google.common.primitives.Bytes;
 import com.wrmsr.nativity.util.Hex;
 import org.apache.commons.lang.ArrayUtils;
 
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Queue;
+import java.util.function.Supplier;
 
+import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.Lists.newArrayList;
 import static com.wrmsr.nativity.x86.Ref.Entry;
 import static com.wrmsr.nativity.x86.Ref.Operand;
 import static com.wrmsr.nativity.x86.Ref.Syntax;
 import static com.wrmsr.nativity.x86.Utils.toByteArray;
+import static java.util.stream.Collectors.toList;
 
 public class Dis
 {
@@ -46,7 +55,7 @@ public class Dis
             {
                 if (key.length == keyOfs) {
                     if (values == null) {
-                        values = Lists.newArrayList();
+                        values = newArrayList();
                     }
                     values.add(value);
                 }
@@ -182,9 +191,172 @@ public class Dis
         return trie;
     }
 
-    public static class Disassembler
+    public static class Immediate
     {
-        protected final List<Entry> prefixes = Lists.newArrayList();
+        public final byte length;
+        public final long value;
+
+        public Immediate(byte length, long value)
+        {
+            this.length = length;
+            this.value = value;
+        }
+
+        @Override
+        public boolean equals(Object o)
+        {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            Immediate immediate = (Immediate) o;
+            return Objects.equals(length, immediate.length) &&
+                    Objects.equals(value, immediate.value);
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return Objects.hash(length, value);
+        }
+
+        @Override
+        public String toString()
+        {
+            return "Immediate{" +
+                    "length=" + length +
+                    ", value=" + value +
+                    '}';
+        }
+    }
+
+    public static class Instruction implements Iterable<Byte>
+    {
+        public final List<Entry> prefixes;
+        public final Entry rexPrefix;
+        // public final Entry vexPrefix;
+
+        public final Entry entry;
+
+        public final Byte sib;
+        public final Byte modrm;
+
+        public final Immediate immediate;
+
+        public Instruction(List<Entry> prefixes, Entry rexPrefix, Entry entry, Byte sib, Byte modrm, Immediate immediate)
+        {
+            this.prefixes = prefixes;
+            this.rexPrefix = rexPrefix;
+            this.entry = entry;
+            this.sib = sib;
+            this.modrm = modrm;
+            this.immediate = immediate;
+        }
+
+        @Override
+        public Iterator<Byte> iterator()
+        {
+            return null;
+        }
+    }
+
+    public interface MultiPeekingIterator<E> extends PeekingIterator<E>
+    {
+        Iterable<E> peek(int size);
+    }
+
+    public static class MultiPeekingIteratorImpl<E> implements MultiPeekingIterator<E>
+    {
+        private final Iterator<E> iterator;
+        private final Queue<E> peeked;
+
+        public MultiPeekingIteratorImpl(Iterator<E> iterator)
+        {
+            this.iterator = iterator;
+            peeked = new LinkedList<>();
+        }
+
+        @Override
+        public Iterable<E> peek(int size)
+        {
+            while (peeked.size() < size) {
+                peeked.add(iterator.next());
+            }
+            Iterator<E> peekedIterator = peeked.iterator();
+            ImmutableList.Builder<E> builder = ImmutableList.builder();
+            for (int i = 0; i < size; ++i) {
+                peeked.add(peekedIterator.next());
+            }
+            return builder.build();
+        }
+
+        @Override
+        public E peek()
+        {
+            if (peeked.isEmpty()) {
+                peeked.add(iterator.next());
+            }
+            return peeked.element();
+        }
+
+        @Override
+        public E next()
+        {
+            if (!peeked.isEmpty()) {
+                return peeked.remove();
+            }
+            else {
+                return iterator.next();
+            }
+        }
+
+        @Override
+        public void remove()
+        {
+            checkState(peeked.isEmpty(), "Can't remove after you've peeked at next");
+            iterator.remove();
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            return !peeked.isEmpty() || iterator.hasNext();
+        }
+    }
+
+    public interface Disassembler extends Iterator<Disassembler>, Iterable<Instruction>, Supplier<Instruction>
+    {
+    }
+
+    public static class DisassemblerImpl implements Disassembler
+    {
+        // Builder? Stepper?
+
+        @Override
+        public Iterator<Instruction> iterator()
+        {
+            return null;
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            return false;
+        }
+
+        @Override
+        public Disassembler next()
+        {
+            return null;
+        }
+
+        @Override
+        public Instruction get()
+        {
+            return null;
+        }
     }
 
     public static void dis(ByteTrie<Entry> trie, byte[] buf)
@@ -194,13 +366,16 @@ public class Dis
             // The AVX instructions described in this document (including VEX and ignoring other prefixes) do not exceed 11 bytes in length, but may increase in the future. The maximum length of an Intel 64 and IA-32 instruction remains 15 bytes.
             throw new IllegalArgumentException("buf length must not exceed 15");
         }
+
+        List<Entry> prefixes = newArrayList();
     }
 
     public static void run(ByteTrie<Entry> trie)
     {
-        byte[] bytes = new byte[] {(byte) 0x55, (byte) 0x48, (byte) 0x89, (byte) 0xe5, (byte) 0x48, (byte) 0x8d, (byte) 0x3d, (byte) 0x35, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-                                   (byte) 0xe8, (byte) 0x4e, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x31, (byte) 0xc0, (byte) 0x5d, (byte) 0xc3, (byte) 0x66, (byte) 0x0f,
-                                   (byte) 0x1f, (byte) 0x44, (byte) 0x00, (byte) 0x00, (byte) 0x66, (byte) 0x0f, (byte) 0x1f, (byte) 0x44, (byte) 0x00, (byte) 0x00};
+        byte[] bytes;
+        // = new byte[] {(byte) 0x55, (byte) 0x48, (byte) 0x89, (byte) 0xe5, (byte) 0x48, (byte) 0x8d, (byte) 0x3d, (byte) 0x35, (byte) 0x00, (byte) 0x00, (byte) 0x00,
+        //               (byte) 0xe8, (byte) 0x4e, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x31, (byte) 0xc0, (byte) 0x5d, (byte) 0xc3, (byte) 0x66, (byte) 0x0f,
+        //               (byte) 0x1f, (byte) 0x44, (byte) 0x00, (byte) 0x00, (byte) 0x66, (byte) 0x0f, (byte) 0x1f, (byte) 0x44, (byte) 0x00, (byte) 0x00};
 
         bytes = new byte[]{
                 (byte) 0x64, (byte) 0x8b, (byte) 0x04, (byte) 0x25, (byte) 0xd4, (byte) 0x02, (byte) 0x00, (byte) 0x00,
@@ -246,7 +421,9 @@ public class Dis
                 (byte) 0x90
         };
 
-        List<Byte> byteList = Lists.newArrayList(Bytes.asList(bytes));
+        List<Byte> byteList = newArrayList(Bytes.asList(bytes));
+
+        Entry.Mode mode = Entry.Mode.E;
 
         while (!byteList.isEmpty()) {
             byte[] b = new byte[byteList.size()];
@@ -256,16 +433,29 @@ public class Dis
             System.out.println(Hex.hexdump(b));
             System.out.println();
 
-            List<Entry> keyEntries = Lists.newArrayList(trie.get(byteList.iterator()));
-            for (Entry entry : keyEntries) {
-                System.out.println(entry);
+            List<Entry> keyEntries = newArrayList(trie.get(byteList.iterator()));
+            Entry entry = null;
+
+            if (keyEntries.size() > 1) {
+                List<Entry> modeEntries = keyEntries.stream().filter(e -> e.mode == mode).collect(toList());
+                if (modeEntries.size() == 1) {
+                    entry = modeEntries.get(0);
+                }
             }
+            else {
+                entry = keyEntries.get(0);
+            }
+
+            if (entry == null) {
+                throw new IllegalStateException();
+            }
+
+            System.out.println(entry);
             System.out.println();
 
-            Entry entry = keyEntries.get(keyEntries.size() - 1);
             int len = 1;
             int modRMCount = 0;
-            List<Syntax> syntaxes = Lists.newArrayList(entry.getSyntaxes());
+            List<Syntax> syntaxes = newArrayList(entry.getSyntaxes());
             Syntax syntax = syntaxes.get(syntaxes.size() - 1);
             System.out.println(syntax);
             Iterable<Operand> operands = Iterables.concat(syntax.getSrcOperands(), syntax.getDstOperands());
@@ -288,6 +478,7 @@ public class Dis
                 }
             }
             len += modRMCount;
+
             for (int i = 0; i < len; ++i) {
                 byteList.remove(0);
             }

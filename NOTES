@@ -10,6 +10,15 @@ https://www.kernel.org/doc/Documentation/kernel-parameters.txt
 https://lagunita.stanford.edu/c4x/Engineering/CS316/asset/Processor_Microarchitecture.pdf
 https://github.com/cyrus-and/gdb-dashboard
 
+https://github.com/torvalds/linux/blob/master/arch/x86/lib/insn.c
+https://github.com/torvalds/linux/blob/master/arch/x86/include/asm/insn.h
+https://github.com/torvalds/linux/blob/master/arch/x86/include/asm/inat.h
+
+https://github.com/torvalds/linux/blob/master/arch/x86/mm/mpx.c#L216
+https://software.intel.com/sites/default/files/managed/9d/f6/Intel_MPX_EnablingGuide.pdf
+
+https://github.com/BeaEngine/beaengine
+
 https://www-ssl.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-manual-325462.pdf @ 1949
 https://github.com/torvalds/linux/blob/master/Documentation/networking/ixgbevf.txt
 https://github.com/torvalds/linux/blob/de182468d1bb726198abaab315820542425270b7/drivers/net/ethernet/intel/ixgbevf/ixgbevf_main.c

@@ -454,7 +454,6 @@ public class Ref
 
     public static class Entry
     {
-
         public final Byte prefixByte;
         public final byte[] bytes;
         public final Byte secondaryByte;
@@ -518,6 +517,11 @@ public class Ref
             return secondaryByte;
         }
 
+        public int size()
+        {
+            return bytes.length;
+        }
+
         public Iterable<Syntax> getSyntaxes()
         {
             // FIXME: eager final
@@ -540,7 +544,34 @@ public class Ref
             return arrayIterable(partialAliasBytes);
         }
 
-        public Entry(Byte prefixByte, byte[] bytes, Byte secondaryByte, Set<Group> groups, ProcessorCode processorStart, ProcessorCode processorEnd, InstructionExtension instructionExtension, byte[] aliasBytes, byte[] partialAliasBytes, Syntax[] syntaxes, boolean isValidWithLockPrefix, boolean isUndocumented, boolean isParticular, boolean isModRMRegister, byte opcodeExtension, byte fpush, byte fpop, EnumSet<BitFields> bitFields, Mod mod, Attr attr, Ring ring, Mode mode, Documentation documentation, FlagSet<Flags> flags, boolean conditionallyModifiesFlags, FlagSet<FPUFlags> fpuFlags, Note note)
+        public Entry(
+                Byte prefixByte,
+                byte[] bytes,
+                Byte secondaryByte,
+                Set<Group> groups,
+                ProcessorCode processorStart,
+                ProcessorCode processorEnd,
+                InstructionExtension instructionExtension,
+                byte[] aliasBytes,
+                byte[] partialAliasBytes,
+                Syntax[] syntaxes,
+                boolean isValidWithLockPrefix,
+                boolean isUndocumented,
+                boolean isParticular,
+                boolean isModRMRegister,
+                byte opcodeExtension,
+                byte fpush,
+                byte fpop,
+                EnumSet<BitFields> bitFields,
+                Mod mod,
+                Attr attr,
+                Ring ring,
+                Mode mode,
+                Documentation documentation,
+                FlagSet<Flags> flags,
+                boolean conditionallyModifiesFlags,
+                FlagSet<FPUFlags> fpuFlags,
+                Note note)
         {
             this.prefixByte = prefixByte;
             this.bytes = bytes;
