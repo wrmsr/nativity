@@ -18,6 +18,17 @@ https://github.com/torvalds/linux/blob/master/arch/x86/mm/mpx.c#L216
 https://software.intel.com/sites/default/files/managed/9d/f6/Intel_MPX_EnablingGuide.pdf
 
 https://github.com/BeaEngine/beaengine
+http://blog.llvm.org/2010/01/x86-disassembler.html
+http://blog.llvm.org/2010/04/intro-to-llvm-mc-project.html
+http://llvm.org/docs/CodeGenerator.html
+http://llvm.org/docs/TableGen/index.html
+https://github.com/llvm-mirror/llvm/blob/master/lib/Target/X86/X86InstrInfo.td
+...
+
+https://github.com/davidar/lljvm
+
+...
+http://www.azulsystems.com/about_us/careers/llvm-compiler-engineer lol
 
 https://www-ssl.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-manual-325462.pdf @ 1949
 https://github.com/torvalds/linux/blob/master/Documentation/networking/ixgbevf.txt
