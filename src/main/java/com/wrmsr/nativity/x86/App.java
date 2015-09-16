@@ -48,7 +48,7 @@ public class App
         doc.getDocumentElement().normalize();
 
         List<Ref.Entry> entries = Lists.newArrayList();
-        Parsing.parseRoot(doc, entries);
+        Ref.Parsing.parseRoot(doc, entries);
         ByteTrie<Ref.Entry> trie = DisImpl.buildTrie(entries);
 
         System.out.println(trie.toDetailedString());

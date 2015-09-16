@@ -23,7 +23,7 @@ import java.util.Iterator;
 import java.util.List;
 
 import static com.google.common.collect.Lists.newArrayList;
-import static com.wrmsr.nativity.x86.Util.toByteArray;
+import static com.wrmsr.nativity.x86.Ref.Util.toByteArray;
 import static com.wrmsr.nativity.x86.Ref.Entry;
 import static java.util.stream.Collectors.toList;
 
