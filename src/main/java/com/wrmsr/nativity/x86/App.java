@@ -20,6 +20,8 @@ import com.wrmsr.nativity.util.ByteTrie;
 import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -31,9 +33,13 @@ import java.util.Set;
 
 public class App
 {
+    private static final Logger logger = LoggerFactory.getLogger(App.class);
+
     public static void main(String[] args)
             throws Exception
     {
+        logger.info("hi");
+
         Document doc;
         try (InputStream is = App.class.getClassLoader().getResourceAsStream("x86reference.xml")) {
             DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
