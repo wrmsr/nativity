@@ -32,7 +32,9 @@ http://www.azulsystems.com/about_us/careers/llvm-compiler-engineer lol
 
 https://github.com/Maratyszcza/Opcodes meh
 
-https://www-ssl.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-manual-325462.pdf @ 1949
+https://www-ssl.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-manual-325462.pdf
+ @ 448
+ @ 1949
 https://github.com/torvalds/linux/blob/master/Documentation/networking/ixgbevf.txt
 https://github.com/torvalds/linux/blob/de182468d1bb726198abaab315820542425270b7/drivers/net/ethernet/intel/ixgbevf/ixgbevf_main.c
 https://www-ssl.intel.com/content/dam/www/public/us/en/documents/datasheets/82599-10-gbe-controller-datasheet.pdf
@@ -77,7 +79,7 @@ http://www.agner.org/optimize/
    33860:       eb d3                   jmp    33835 <raise+0x25>
    33862:       48 8b 15 2f f7 34 00    mov    rdx,QWORD PTR [rip+0x34f72f]        # 382f98 <_IO_file_jumps+0xa98>
    33869:       f7 d8                   neg    eax
-   3386b:       64 89 02                mov    DWORD PTR fs:[rdx],eax
+   3386b:       64 89 02                mov    DWORD PTR fs:[rdx],eaxGj0gg0j
    3386e:       83 c8 ff                or     eax,0xffffffffffffffff
    33871:       c3                      ret
    33872:       f7 d8                   neg    eax
@@ -92,3 +94,104 @@ http://www.agner.org/optimize/
    3387d:       90                      nop
    3387e:       90                      nop
    3387f:       90                      nop
+
+
+
+https://kernel.org/doc/Documentation/sysrq.txt
+https://github.com/llvm-mirror/llvm/commit/63cc4f56a92d80148009381616897c7a1836c296#diff-ebb7581ec6d8d67a19dd39ca995fb4b4
+https://llvm.org/svn/llvm-project/java/trunk/docs/java-frontend.txt
+https://en.wikipedia.org/wiki/Large_receive_offload
+https://www.snellman.net/blog/archive/2015-08-25-tcp-optimization-in-mobile-networks/
+
+https://www.blackhat.com/presentations/win-usa-04/bh-win-04-aitel.pdf
+
+
+https://github.com/cyrus-and/gdb-dashboard/raw/master/.gdbinit
+sudo apt-get install gdb
+
+
+lol mmap /dev/mem make jnr structs for descriptor entries
+ - bonus points for making jnr translate the addrs for me
+
+https://stackoverflow.com/questions/18298097/escalating-to-ring-0-in-linux-application
+http://slashdot.org/story/00/07/20/1440204/answers-from-planet-tux-ingo-molnar-responds
+https://people.redhat.com/~mingo/TUX-patches/tux3-2.6.18-1
+http://www.fenrus.demon.nl/
+/dev/mem PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE|MAP_NORESERVEM
+ share?
+rez the sigscanner lol
+
+http://dev.yorhel.nl/doc/easyipc
+https://www-ssl.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-manual-325462.pdf @ 1949
+
+
+http://derekmolloy.ie/writing-a-linux-kernel-module-part-1-introduction/
+http://derekmolloy.ie/writing-a-linux-kernel-module-part-2-a-character-device/
+http://derekmolloy.ie/kernel-gpio-programming-buttons-and-leds/
+
+
+starr -> misc_register
+ - god damn sysexit - easy do do whole-core or whole-system :|
+http://stackoverflow.com/a/13585364
+
+
+[root@ip-10-40-14-217 ~]# grep CONFIG_STRICT_DEVMEM /boot/config-3.14.48-33.39.amzn1.x86_64
+CONFIG_STRICT_DEVMEM=y
+
+yum groupinstall "Development Tools" ; yum install ncurses-devel hmaccalc zlib-devel binutils-devel elfutils-libelf-devel kernel-devel.x86_64
+sudo yum install kernel-devel-$(uname -r)
+
+sudo yumdownloader --source kernel
+
+
+
+sudo apt-get install ncurses-dev ; sudo apt-get build-dep linux-image-$(uname -r) ; apt-get source linux-image-$(uname -r) ; cd linux-$(uname -r)
+
+fakeroot debian/rules clean
+fakeroot debian/rules binary-headers binary-generic
+
+chmod a+x debian/scripts/*
+chmod a+x debian/scripts/misc/*
+fakeroot debian/rules clean
+fakeroot debian/rules editconfigs
+
+sudo dpkg -i linux*.deb
+sudo reboot
+
+
+ok, fuck: peek + poke, optionally atomic, driver inc.
+ - peek / poke
+ - atomic
+ - with locks
+  - task_lock
+  - pidmap_lock
+ - on processor
+
+lol just install a rootkit
+https://github.com/ivyl/rootkit
+https://github.com/hiteshd/Android-Rootkit
+https://github.com/geekben/rootkit
+https://github.com/maK-/maK_it-Linux-Rootkit
+https://github.com/dgoulet/kjackal
+https://github.com/cmj0121/rootkit
+https://github.com/silhouettes/rootkit
+https://github.com/Lonkal/KernelRootkit
+https://github.com/mncoppola/suterusu
+https://github.com/nsarlin/BackdoorLinux/blob/master/Backdoor_Linux_src/rooty/rooty.c
+
+
+
+
+struct mem_cmd {
+  void *dst;
+  void *src;
+  size_t sz;
+  int flags;
+}
+
+
+
+https://www.usenix.org/legacy/events/vee05/full_papers/p46-click.pdf
+http://arxiv.org/pdf/1105.1815.pdf
+http://dune.scs.stanford.edu/belay:dune_slides.pdf
+https://lwn.net/Articles/392307/
