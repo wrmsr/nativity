@@ -169,8 +169,6 @@ ok, fuck: peek + poke, optionally atomic, driver inc.
 
 lol just install a rootkit
 https://github.com/ivyl/rootkit
-https://github.com/hiteshd/Android-Rootkit
-https://github.com/geekben/rootkit
 https://github.com/maK-/maK_it-Linux-Rootkit
 https://github.com/dgoulet/kjackal
 https://github.com/cmj0121/rootkit
