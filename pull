@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+git pull origin wrmsr_working
