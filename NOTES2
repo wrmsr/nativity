@@ -233,3 +233,5 @@ https://github.com/xedin/windmill
 http://llvm.org/docs/LangRef.html
 http://www.aosabook.org/en/llvm.html
 http://llvm.org/docs/TableGen/
+
+https://github.com/nael8r/How-To-Write-An-LLVM-Register-Allocator/blob/master/HowToWriteAnLLVMRegisterAllocator.rst
