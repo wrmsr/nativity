@@ -12,7 +12,7 @@
  * limitations under the License.
  */
 
-grammar llvm;
+grammar Llvm;
 
 tokens {
     DELIMITER
