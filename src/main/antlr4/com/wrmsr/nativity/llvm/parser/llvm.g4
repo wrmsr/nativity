@@ -11,28 +11,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.wrmsr.nativity;
 
-import junit.framework.Assert;
-import junit.framework.Test;
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
+grammar llvm;
 
-public class AppTest
-        extends TestCase
-{
-    public AppTest(String testName)
-    {
-        super(testName);
-    }
-
-    public static Test suite()
-    {
-        return new TestSuite(AppTest.class);
-    }
-
-    public void testApp()
-    {
-        Assert.assertTrue(true);
-    }
+tokens {
+    DELIMITER
 }
+
+statement
+    : 'true' #trueLiteral
+    ;
+
+// Catch-all for anything we can't recognize.
+// We use this to be able to ignore and recover all the text
+// when splitting statements with DelimiterLexer
+UNRECOGNIZED
+    : .
+    ;
